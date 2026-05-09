@@ -252,7 +252,8 @@ class PetWindow:
         self.balance_cache = ""
         self.last_check_time = 0
 
-        # 窗口设置
+        # 窗口设置 - 先隐藏，防止窗口提前映射导致任务栏出现
+        self.root.withdraw()
         self.root.overrideredirect(True)
         self.root.wm_attributes("-topmost", True)
         self.root.configure(bg="white")
@@ -299,67 +300,45 @@ class PetWindow:
         self.setup_context_menu()
 
         # 固定位置 - 屏幕右下角
+        # 使用 update_idletasks 计算尺寸但不映射窗口
         self.root.update_idletasks()
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         w = self.root.winfo_reqwidth()
         h = self.root.winfo_reqheight()
         self.root.geometry(f"+{sw - w - 30}+{sh - h - 60}")
-        # 窗口显示后立即从任务栏移除
-        self.root.update()
+
+        # 设置 WS_EX_TOOLWINDOW 确保窗口不出现在任务栏
         self._hide_from_taskbar()
+
+        # 设置任务栏图标
+        ico_path = os.path.join(ICON_DIR, "app_icon.ico")
+        if os.path.exists(ico_path):
+            try:
+                self.root.iconbitmap(ico_path)
+            except Exception:
+                pass
+
+        # 显示窗口
+        self.root.deiconify()
 
         # 如果有 API Key，启动后自动查询
         if self.config.get("api_key"):
             self.root.after(1500, self.check_balance_silent)
 
     def _hide_from_taskbar(self):
-        """通过 ITaskbarList::DeleteTab 从任务栏移除"""
+        """通过 WS_EX_TOOLWINDOW 使窗口不在任务栏显示（在窗口映射前调用）"""
         try:
-            from ctypes import (byref, c_void_p, c_ulong, c_ushort,
-                                c_ubyte, c_long, Structure, WinDLL,
-                                sizeof, WINFUNCTYPE)
-
-            class GUID(Structure):
-                _fields_ = [
-                    ("Data1", c_ulong),
-                    ("Data2", c_ushort),
-                    ("Data3", c_ushort),
-                    ("Data4", c_ubyte * 8),
-                ]
-
-            CLSID_TaskbarList = GUID(
-                0x56FDF344, 0xFD6D, 0x11D0,
-                (c_ubyte * 8)(0x95, 0x8A, 0x00, 0x60, 0x97, 0xC9, 0xA0, 0x90))
-            IID_ITaskbarList = GUID(
-                0x56FDF342, 0xFD6D, 0x11D0,
-                (c_ubyte * 8)(0x95, 0x8A, 0x00, 0x60, 0x97, 0xC9, 0xA0, 0x90))
-
-            HRESULT = c_long
-            ole32 = WinDLL("ole32")
-            ole32.CoInitialize(None)
-
-            pTaskbar = c_void_p(0)
-            hr = ole32.CoCreateInstance(
-                byref(CLSID_TaskbarList), None, 1,
-                byref(IID_ITaskbarList), byref(pTaskbar))
-
-            if hr == 0 and pTaskbar:
-                pv_size = sizeof(c_void_p)
-                vtable = c_void_p.from_address(pTaskbar.value).value
-                hwnd = self.root.winfo_id()
-
-                # HrInit(this)
-                fn = WINFUNCTYPE(HRESULT, c_void_p)(
-                    c_void_p.from_address(vtable + 3 * pv_size).value)
-                fn(pTaskbar)
-
-                # DeleteTab(this, hwnd)
-                fn = WINFUNCTYPE(HRESULT, c_void_p, c_void_p)(
-                    c_void_p.from_address(vtable + 5 * pv_size).value)
-                fn(pTaskbar, c_void_p(hwnd))
-
-            ole32.CoUninitialize()
+            import ctypes
+            hwnd = self.root.winfo_id()
+            GWL_EXSTYLE = -20
+            WS_EX_APPWINDOW = 0x00040000
+            WS_EX_TOOLWINDOW = 0x00000080
+            user32 = ctypes.windll.user32
+            ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            # 移除 WS_EX_APPWINDOW，添加 WS_EX_TOOLWINDOW
+            new_style = ex_style & ~WS_EX_APPWINDOW | WS_EX_TOOLWINDOW
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, new_style)
         except Exception:
             pass
 
@@ -631,14 +610,6 @@ class PetWindow:
 def main():
     root = tk.Tk()
     root.title("DeepSeek 余额桌宠")
-
-    # 设置任务栏图标 (使用 SVG 转换)
-    ico_path = os.path.join(ICON_DIR, "app_icon.ico")
-    if os.path.exists(ico_path):
-        try:
-            root.iconbitmap(ico_path)
-        except Exception:
-            pass
 
     app = PetWindow(root)
     root.mainloop()

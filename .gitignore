@@ -1,0 +1,23 @@
+# API Key 配置文件
+config.json
+dist/config.json
+
+# 打包输出
+dist/*.exe
+dist/*.spec
+build/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# 临时图片
+icon/*_test.png
+icon/*_test.jpg
+
+# IDE
+.vscode/
+.idea/
